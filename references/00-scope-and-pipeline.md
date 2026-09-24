@@ -126,6 +126,8 @@ LookAt_Target
 
 ### §1.3 建议的工程布局
 
+#### 单项目（一个 mod）
+
 ```
 tools/          管线脚本 + 诊断脚本
 docs/           工程日志（强烈建议逐轮记录症状→根因→修法）
@@ -138,3 +140,42 @@ work/
 
 `docs/` 那份日志的价值极高：本例的多个结论都是"回看日志发现当时的判断是错的"。
 每轮实机反馈都记一条 **症状 → 测量 → 根因 → 修法 → 验证数据**。
+
+#### 多项目工作区（**打算做第二个 mod 时先这么摆**）
+
+做第二个 mod 时，最容易犯的错是把"跨项目共享的东西"留在第一个项目的工作目录里 ——
+然后第二个项目的脚本要么复制一份（两份渐渐不同步），要么跨目录引用（路径互相咬死）。
+
+**建议一开始就分三层**：
+
+```
+<workspace>/                       ← 例如 D:\dsh-x4
+├── shared/                        ← 跨项目复用，不进任何项目的 git
+│   ├── x4root/                    ← 解包的游戏根（X4CharacterConverter 的 data_root）
+│   ├── <converter addon>/         ← Blender 插件本体
+│   └── reference-mods/            ← 别人的 mod（对照用）+ 解包内容
+├── <project-a>/                   ← 一个 mod 一个 git 仓库
+│   ├── tools/  docs/  README.md
+│   └── work/                      ← 本项目专属产物（.blend / npz / preview / mod 树）
+└── <project-b>/
+```
+
+**判断标准**：这个目录里的东西，换个角色/换个来源游戏还用得上吗？
+
+| 放 `shared/` | 放 `<project>/work/` |
+|---|---|
+| 解包的游戏根（含 `libraries/*.xml` 原版定义） | 本项目的 stage1 `.blend` |
+| Blender 插件、`XRCatTool.exe` | dump 出来的 `.npz` |
+| 别人的参考 mod 及其解包内容 | 渲染判据图、贴图中间产物 |
+| 从游戏取的原版基准资产（head/torso 骨架） | 最终 mod 树与打包产物 |
+
+**两个操作要点**：
+
+1. **脚本里的路径要能一眼看出哪些是共享的** —— 例如
+   `WORK = r"<ws>\<project>\work"`、`SHARED = r"<ws>\shared"`，
+   再 `X4_ROOT = os.path.join(SHARED, "x4root")`。
+   本例早期把 `x4root` 放在 `work/` 下，等到要抽出来时发现 19 个脚本各自硬编码了
+   它和插件的绝对路径，只能批量替换 + 重跑整条管线验证（一次替换还因为规则重叠
+   生成了 `shared\shared` 这种路径，直接 `ModuleNotFoundError`）。
+2. **移动共享资产后必须重跑一遍完整管线**（stage1 → stage2 → 组装 → 自检），
+   不能只跑自检 —— 自检脚本不碰 Blender，路径错了它照样"全部通过"。
