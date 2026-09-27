@@ -434,3 +434,100 @@ Blender 里设的 blendmode **完全没有生效**：该透明的没透明，该
 3. 别靠"在 Blender 里改材质再导一次"验证这件事 —— 那正是它一直没暴露的原因。
 
 > 导出侧的处理（重写时机、manifest 校验）见 `05-export-and-packaging.md` §9.8。
+
+---
+
+## §7.11 `blendmode` 是单值：**删掉作者的"隐藏面"**，别指望 alpha 帮你省事
+
+### §7.11.1 症状
+
+同一件衣服上出现两种互相矛盾的现象，来源却是同一件事：
+
+* **裙摆、袖子、发片从内侧穿帮**（背面被剔除）—— 材质为了 alpha 选了 `ALPHA1/ALPHA8`；
+* **衣服上浮出本该看不见的内衬、身体色块、硬边黑块** —— 材质为了双面选了 `TWOSIDED`，
+  那些面带的 alpha = 0 被完全忽略，于是"本该透明"的面变成了实心；
+* 一件衣服的几块面料各选一种模式，于是**两种现象同时出现**，看起来像两个 bug。
+
+### §7.11.2 证据：X4 的 `blendmode` 没有组合值
+
+把 vanilla `libraries/material_library.xml` 全量统计一遍：
+
+```
+blendmode="NONE"       967        blendmode="ALPHA8"      191
+blendmode="ADDITIVE"   643        blendmode="ALPHA1"       71
+blendmode="SCREEN"     106        blendmode="TWOSIDED"      9
+```
+
+`TWOSIDED` 的 9 个用例（角色斗篷 `p1_char_spl_f_cloak_gen_01`、船体花纹、空间站横幅、
+过场测试材质）**没有一个带 alpha**；`ALPHA1/ALPHA8` 的用例**没有一个标双面**。
+**"双面 + alpha 测试"这个组合在 X4 里不存在。**
+
+于是每个材质只能二选一：
+
+```
+薄片（裙摆、袖子、发片、睫毛）  → TWOSIDED，代价是它不听 alpha
+需要 alpha 遮罩的面             → ALPHA1/ALPHA8，代价是背面被剔除
+```
+
+### §7.11.3 MMD 作者是怎么"删面"的
+
+MMD 没有"删除三角形"这种编辑，作者要丢掉不想要的面，通常是把那片 UV 区域的
+**贴图 alpha 涂成 0**：内衬（被外层挡住的里子）、被衣服盖住的身体、腋下补片。
+这些面在 MMD 里因为 alpha 混合而完全不可见，**它们仍然存在于几何里**。
+
+实测（甘雨，`diag_alpha_faces.py` 按三角形三顶点 UV 采样贴图 alpha）：
+
+| 材质 | 三角面 | 整面采样到 alpha 0 的比例 | 是什么 |
+|---|---|---|---|
+| `cloth` | 9944 | **9.1%**（906 面） | 胸衣内衬 |
+| `skin` | 1086 | **7.9%**（86 面） | 被衣服盖住的胸口一块 + 腋下两块 |
+| 其余 17 个 | — | 0% | 全不透明 |
+
+### §7.11.4 怎么判断"该删"还是"该留"
+
+**因为两种误判的代价不对称，必须看图。** 把两组分开渲染（同一相机、同一角度）：
+
+```python
+fa = sample_face_alpha(alpha_of(tex), UV[faces])      # 每个面的平均 alpha
+kept    = faces[fa >= ALPHA_KEEP]
+dropped = faces[fa <  ALPHA_KEEP]
+soft_render.orbit_views(...)   # 各出一张，比较
+```
+
+* `dropped` 渲染出来是**成片的面板**（内衬、被遮挡的躯干）→ 删了无感；
+* `dropped` 渲染出来是**沿轮廓的细边**（蕾丝、纱边、发梢）→ 删了会啃掉剪影，
+  这种要留，并让材质走 alpha 模式（同时接受背面剔除，或把这块单独拆槽位）。
+
+阈值取 **0.03**（不是 0.5）：MMD 用 alpha 混合，alpha 0.2 的面是**淡淡可见**的，
+按 0.5 去砍会在剪影上啃出缺口。0.03 只吃掉真正不可见的面，
+留下来的"羽化边"交给材质的 alpha 模式处理。
+
+### §7.11.5 修法：删三角形，然后材质可以放心 TWOSIDED
+
+```python
+# 与诊断脚本共用同一个函数：两边各写一份采样，必然悄悄分歧
+from ganyu_src import ALPHA_KEEP, sample_face_alpha
+
+a = atlas_alpha(texp)                     # (H, W) uint8，row 0 = 图像顶端
+if float(a.min()) < 254.0:                # 全不透明的图直接跳过，省时间
+    keep = sample_face_alpha(a, uvs_of(faces)) >= ALPHA_KEEP
+    faces = [f for f, k in zip(faces, keep) if k]
+```
+
+删完后：
+
+* 材质**统一用 `TWOSIDED`**（薄片）或 `NONE`（封闭实体），不再需要 alpha 模式；
+* 贴图可以从 BC3 **降到 BC1**（省 25% 显存）；
+* 顶点数顺带下降（甘雨 `cloth` 7440 → 6851，`skin` 766 → 690）。
+
+> ⚠️ **`atlas_alpha()` 的 v 方向要数清**：Blender 的 `image.pixels` **row 0 在图像底部**，
+> 而 PMX 的 v = 0 在顶部 —— 读进来要 `px[::-1]` 翻一次，才能和 PIL 版采样函数共用。
+> 两段式管线里这是第三个"上下颠倒"（另两个见 `01-coordinate-frames.md` §3.6）。
+
+### §7.11.6 怎么证伪
+
+1. 先渲染 `dropped` 组，确认它确实是"作者隐藏的面板"而不是剪影上的边；
+2. 数一遍删掉的面数，与诊断脚本的预期**逐材质对上**（甘雨：906 + 86 = 992）。
+   对不上说明构建与诊断用的不是同一份判据；
+3. 删完再跑一次材质检查：`cloth`/`skin` 的 `alpha` 标记应当可以去掉，
+   贴图编码应当变成 BC1 —— 如果还挂着 alpha，说明有面没删干净。

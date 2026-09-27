@@ -1,8 +1,9 @@
 # x4-npc-replacement-mod
 
 > ⚠️ **本仓库内容由 AI 生成。**
-> 它是一次真实工程的**过程沉淀**：把《生化危机8：萝丝之影》的成年萝丝
-> 移植成《X4：基石》的 Argon 女性 NPC。所有数字、判据、坑位都来自那次实测，
+> 它是**五次**真实工程的**过程沉淀**：把《生化危机8：萝丝之影》的成年萝丝、
+> 《原神》的艾梅莉埃 / 荧 / 甘雨、《女鬼桥 开魂路》的孟柏汝，分别移植成
+> 《X4：基石》的 Argon / Terran 女性 NPC。所有数字、判据、坑位都来自这些实测，
 > 由 AI 在工程过程中记录、复盘、整理成文，**未经人工逐条复核**。
 > 换角色 / 换来源游戏 / 换 X4 版本时必须重新量，不要照搬数字。
 
@@ -30,23 +31,35 @@ macro 只挑 head/torso/props 三个网格槽位，所以替换物必须带上**
 - **顶点预算**：X4 实例化渲染，超预算会让空间站频闪、地图卡死。
 - **材质**：没有 albedo 的材质必须继承主材质的**颜色与粗糙度**，
   否则军绿夹克上会出现一条深色横带。
+- **`blendmode` 是单值**：「双面」与「alpha 测试」在 X4 里不能兼得，
+  所以 MMD 作者用贴图 alpha=0 隐藏的面**必须在构建时删掉**
+  （否则要么内衬露出来变成实心块，要么裙摆从内侧穿帮）。
+- **目标种族决定替换策略**：改外观池还是逐个 macro 覆盖 `<models>`，
+  取决于该种族的派生 macro **是否重写自己的 `<models>`** —— 同名游戏里两种都存在。
+- **腿与步态**：把"走路像猫步"翻译成可测的量（两脚间距 vs vanilla），
+  以及为什么横向阻尼**不能沿骨链逐级递减**（那会把骨链折弯）。
 - **XAC 导出器的陷阱**：目录已存在时静默保留旧产物、删对象无法移除槽位、
-  空槽位在 .xac 里不可表达。
-- **发版前自检清单**与**症状决策树**（实机报问题时从哪查起）。
+  空槽位在 .xac 里不可表达、shader/blendmode 被硬编码。
+- **发版前自检清单**与**症状决策树**（21 条实机症状 → 根因 → 修法），
+  外加一节**诊断纪律**：尺子本身先被证伪（含"判据方向写反"的真实案例）。
 
 ## 结构
 
 ```
-SKILL.md                        索引 + 三条硬规则 + 数字速查 + 症状索引
+SKILL.md                        索引 + 八条硬规则 + 数字速查 + 症状索引
 references/
-  00-scope-and-pipeline.md      适用范围、X4 三层架构、工具链、端到端流程
-  01-coordinate-frames.md       三个坐标系、手性/绕序、判据
+  00-scope-and-pipeline.md      适用范围、X4 三层架构、目标种族与替换策略、工具链、端到端流程
+  01-coordinate-frames.md       三个坐标系、手性/绕序、判据、UV 的 v 轴
   02-retargeting.md             逐骨转移、骨轴、折叠骨、眼/脚/手/头颈、权重平滑
   03-decimation-and-normals.md  顶点预算、减面、法线、切线
-  04-materials-and-textures.md  材质槽、无 albedo 材质、BC 编码
-  05-export-and-packaging.md    导出器约束与陷阱、打包、三个 XML、全替换模式
+  04-materials-and-textures.md  材质槽、无 albedo 材质、TWOSIDED、重合层外推、
+                                blendmode 单值 → 删掉作者的隐藏面、BC 编码
+  05-export-and-packaging.md    导出器约束与陷阱、打包、三个 XML、逐个 macro 覆盖、
+                                组装脚本的静默陷阱
   06-verification.md            判据工具、指标口径、发版清单
-  07-symptom-triage.md          实机症状 → 根因 → 修法
+  07-symptom-triage.md          实机症状 → 根因 → 修法（21 条）
+  08-diagnostic-discipline.md   诊断纪律：尺子先被证伪、判据方向写反的案例
+  09-legs-and-lateral-damping.md 腿与步态：猫步的可测判据、横向阻尼不能逐级递减
 ```
 
 ## 安装
@@ -73,8 +86,15 @@ Windows 上是 `C:\Users\<你>\.dsh\skills\x4-npc-replacement-mod\`。
 
 ## 参考工程
 
-这套结论来自 [`x4-character-retarget`](https://github.com/tridkx/x4-character-retarget)
-——RE8 萝丝 → X4 Argon 女性 NPC 的完整工程（含管线脚本与逐轮工程日志）。
+这套结论来自下面几个完整工程（每个都含管线脚本与逐轮工程日志）：
+
+| 工程 | 来源 → 目标 | 它贡献了什么 |
+|---|---|---|
+| [`x4-character-retarget`](https://github.com/tridkx/x4-character-retarget) | RE8 萝丝 → Argon 女性 | 整套方法论的起点：手性/绕序、逐骨转移、导出器陷阱 |
+| [`x4-lumine-mod`](https://github.com/tridkx/x4-lumine-mod) | 原神 荧 → Terran / Argon 女性 | 目标种族决定替换策略、UV 的 v 轴、TWOSIDED、猫步（横向阻尼） |
+| [`x4-boru-mod`](https://github.com/tridkx/x4-boru-mod) | 女鬼桥 孟柏汝（UE4）→ Argon 女性 | 非 MMD/RE Engine 来源的完整重测、一键构建与自检脚本 |
+| [`x4-ganyu-mod`](https://github.com/tridkx/x4-ganyu-mod) | 原神 甘雨 → Argon 女性 | **`blendmode` 是单值 → 删掉作者的隐藏面**、材质名不可跨模型复用 |
+
 那边有可运行的代码；这边是可以复用的**方法与坑位**。
 
 ## Licence

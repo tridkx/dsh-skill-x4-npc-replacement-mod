@@ -352,3 +352,60 @@ def write_material_library(manifest, out_path):
 
 > 材质侧要准备什么（材质命名、贴图节点名、占位色）见
 > `04-materials-and-textures.md` §7.10。
+
+---
+
+## §9.9 组装脚本的两个**静默**陷阱（都会"跑成功但什么都没做/做了什么你不知道"）
+
+### §9.9.1 macro 清单的两种 JSON 形状 → 会静默替换 **0 个** macro
+
+枚举 macro 的工具（`find_female_macros.py` 一类）在不同项目里写过两种输出：
+
+```jsonc
+// A：纯名字数组（Terran 那次）
+["character_pio_f_diplomat_01_macro", ...]
+
+// B：带证据的对象（Argon 那次）——每个 macro 的入选理由要能复盘
+{"race": "argon",
+ "targets": [{"name": "character_arg_f_diplomat_01_macro",
+              "why": "race=argon+pool", "types": ["head", "torso"]}, ...],
+ "skipped": [...], "mismatch": []}
+```
+
+组装脚本若直接 `macros = json.load(...)` 然后 `for name in macros:`，
+对 B 迭代出来的是**字典的键名**（`race` / `targets` / …），于是生成 5 条
+指向**不存在 macro** 的 `<replace>`：
+
+> **mod 能装、能被游戏加载、什么都不改，而且没有任何一处报错。**
+
+修法：一个 `load_macro_list()` 同时吃两种形状，并且
+
+* 结果为**空就硬失败**（"refusing to write an empty replace pass"）；
+* 生成完再断言 patched 集合 == 清单集合（`verify_mod.py` 里已经有这条检查，
+  但**组装脚本自己也要挡一道**，不能指望自检被发现）。
+
+### §9.9.2 构建脚本**不应该**顺手把 mod 装进游戏
+
+从上一个项目继承来的 `build_all.py` 把 `deploy` 放进了默认步骤列表：
+
+```python
+STEPS = ['stage1', 'textures', 'stage2', 'mod', 'pack', 'deploy']   # ← 默认含安装
+todo = [s for s in STEPS if ...]
+if args.deploy and 'deploy' not in todo:       # 这个判断形同虚设
+    todo.append('deploy')
+```
+
+后果：跑一次"构建"就往 `X4 Foundations/extensions/` 写了目录、装上了 mod，
+而下一次构建 `--mode replace` 又会**悄悄换掉**它 —— 游戏里到底是什么版本，
+凭构建日志看不出来。
+
+**规则**：
+
+* 会写**游戏安装目录**的步骤，默认**不执行**，只由显式开关（`--deploy`）触发；
+* 两个形态共用同一个扩展 id 时，`deploy` 必须是**整个目录全量替换**（删了重建），
+  不能是合并 —— 半更新的目录（新 `.dat` + 旧 `.cat`）正是"mod 没生效"的经典成因；
+* deploy 之后**打印它装到哪、装的是哪个形态**，并在最终汇报里说出来。
+
+> 相关：`09-legs-and-lateral-damping.md` §13.5 —— "改了半天没变化"的第一件事
+> 就是核对游戏里 `extensions/<id>/content.xml` 的 version。脚本悄悄换版本会让
+> 这条排查彻底失效。
