@@ -218,9 +218,9 @@ Argon 项目只改 `charactergroups.xml`（外观池）就够 —— 池里列�
 
 | 做法 | 结果 |
 |---|---|
-| 改 base macro 的 `/properties/models` | **无效** —— 派生 macro 自己的 `<models>` 优先，base 的槽位根本不被读到 |
-| 只改 `charactergroups.xml` 的池 | **漏掉所有剧情/任务 NPC** —— 它们由任务脚本直接 `ref` macro，不经过池 |
-| **逐个 macro `<replace>` 整个 `models` 块** | ✓ 正确做法 |
+| 改 base macro 的 `/properties/models` | **分种族**：派生 macro 继承 base 时（Argon）有效；派生 macro 各自重写 `<models>` 时（Terran）**无效** —— base 的槽位根本不被读到 |
+| 只改 `charactergroups.xml` 的池 | 能覆盖随机 NPC，但**漏掉所有剧情 / 任务 NPC** —— 它们由任务脚本直接 `ref` macro，不经过池 |
+| **逐个 macro `<replace>` 整个 `models` 块** | ✓ 正确做法（"改池还是逐个替换"的判据见 `00-scope-and-pipeline.md` §0.5） |
 
 ```xml
 <diff>
@@ -239,13 +239,8 @@ Argon 项目只改 `charactergroups.xml`（外观池）就够 —— 池里列�
 **整块替换，不是逐个改 `<model>` 子节点**：块的 schema 在各 macro 之间一致，
 整块换少写一半 XPath，也不会漏掉某个槽位。
 
-**顺带的两个好处**（相对"整池替换"）：
-
-1. **保留 NPC 身份多样性** —— 池仍在多个 macro 之间挑，NPC 的名字 / 职称 /
-   语音 / 派系由 macro 决定，换掉外观但身份还在；整池 `<replace>` 会把一个池里
-   的所有 NPC 压成同一个 macro，身份信息跟着塌缩。
-2. **剧情 NPC 一并覆盖** —— 脚本直接 `ref` 的剧情/任务 NPC 与池里的随机 NPC
-   走同一条路径，不需要额外处理。
+（逐个替换相对整池替换的两个好处 —— 保留 NPC 身份多样性、覆盖剧情 NPC ——
+见 `00-scope-and-pipeline.md` §0.5。）
 
 ### §9.7.3 "哪些 macro 算目标种族"必须按数据判，不能按名字判
 
@@ -359,7 +354,8 @@ def write_material_library(manifest, out_path):
 
 ### §9.9.1 macro 清单的两种 JSON 形状 → 会静默替换 **0 个** macro
 
-枚举 macro 的工具（`find_female_macros.py` 一类）在不同项目里写过两种输出：
+枚举 macro 的工具（`find_<race>_female_macros.py`，本例如
+`find_terran_female_macros.py`）在不同项目里写过两种输出：
 
 ```jsonc
 // A：纯名字数组（Terran 那次）
@@ -406,6 +402,6 @@ if args.deploy and 'deploy' not in todo:       # 这个判断形同虚设
   不能是合并 —— 半更新的目录（新 `.dat` + 旧 `.cat`）正是"mod 没生效"的经典成因；
 * deploy 之后**打印它装到哪、装的是哪个形态**，并在最终汇报里说出来。
 
-> 相关：`09-legs-and-lateral-damping.md` §13.5 —— "改了半天没变化"的第一件事
-> 就是核对游戏里 `extensions/<id>/content.xml` 的 version。脚本悄悄换版本会让
-> 这条排查彻底失效。
+> 相关：`06-verification.md` §10.3.2 与 `09-legs-and-lateral-damping.md` §13.5 ——
+> "改了半天没变化"的第一件事，就是核对游戏里 `extensions/<id>/content.xml` 的
+> version。脚本悄悄换版本会让这条排查彻底失效。

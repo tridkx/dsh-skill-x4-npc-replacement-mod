@@ -120,12 +120,10 @@ Metal_Mat          (117,108,92) → (80,75,66) 压到夹克色 ✓（保留自�
 拉链底座  Jacket_Zipper_*     UV 在 0..1 内        ← 同上
 ```
 
-**颜色怎么定**：用**该部件主材质、按自身 UV 采样的均色**，别用整图平均
-（源资产常把上身所有材质打进一张图集，整图平均会被牛仔裤/皮肤拉偏）。
-**粗糙度**也一并继承 —— 缺 smoothness 贴图时导出器会写死 `Smoothness = 0.5`，
-而夹克本体是 0.08，那些饰边就会在哑光大衣上反光发亮。
+**颜色与粗糙度怎么定**：见 §7.3.3 —— 按该部件主材质、用自身 UV 采样求均色，
+并继承主材质的粗糙度。（重复写一份的代价见 §7.8.4 的教训：同一判据两处实现必然分歧。）
 
-### §7.4.2 **先记住这条**：块压缩格式是格式，不是偏好
+### §7.4.2 块压缩格式是格式，不是偏好
 
 ```python
 # DXT5 / BC3 的块布局是【8 字节 alpha】【8 字节 color】—— 顺序是格式的一部分
@@ -156,8 +154,7 @@ assert abs(back[...,3].mean() - 128) < 5      # alpha 也要回来
 **排查提示**：`洋红 (255,0,255)` 在 X4 里通常是**"贴图缺失"**的占位色，
 不是贴图内容 —— 先怀疑"游戏没找到/没接受这张贴图"，再怀疑贴图本身画错了。
 
-### §7.4.3 占位贴图：**不要生成 16×16 的纯色**
-
+### §7.4.3 自研编码器的四个实现坑
 
 插件的 `texconv.dll` 在受限环境下可能返回 `E_NOINTERFACE`。按"外部工具失效先绕开"
 的原则，用 numpy 自己实现 BC1/BC3/BC4/BC5 是可行的。**四个坑**：
@@ -185,7 +182,8 @@ assert abs(back[...,3].mean() - 128) < 5      # alpha 也要回来
 ### §7.6.1 症状
 
 单面几何被引擎剔除背面：从某些角度看衣摆/裙摆/发片**整片消失**，
-或者看到对面内壳（与 §3.3 的绕序错误表现一致，**先排除绕序**再走这一节）。
+或者看到对面内壳（与 `01-coordinate-frames.md` §3.3 的绕序错误表现一致，
+**先用 §3.4 的判据排除绕序**，再走这一节）。
 
 ### §7.6.2 证据：源模型根本没有反向孪生面
 
@@ -218,7 +216,7 @@ diag_double_sided 量到 22868 面里 0 个有反向孪生面
 <material name="rose_cloth" shader="p1_character" blendmode="TWOSIDED">
 ```
 
-**vanilla 有先例**：原版 `p1_char_spl_f_cloak_gen_01` 用的正是
+**vanilla 有先例**：`p1_char_spl_f_cloak_gen_01` 用的正是
 `p1_character` + `TWOSIDED`。零几何成本，也不可能和自己打架。
 
 **收益（同一模型，实测）**：
@@ -229,7 +227,8 @@ head 8195 → 4813（1.03×）   body 20513 → 11325（3.15×）   mod 3.0 → 
 
 ### §7.6.5 怎么证伪
 
-1. 开 `show_backface_culling = True`（§3.5）复现实机剔除，看消失的是不是同一批面。
+1. 开 `show_backface_culling = True`（`01-coordinate-frames.md` §3.5）复现实机剔除，
+   看消失的是不是同一批面。
 2. 若已经做了反向壳：**检查是否有任何顶点法线长度接近 0** —— 那就是共享顶点被平均，
    即使这一次没翻车也要拆开。
 3. 改 `TWOSIDED` 后**顶点数不应变化**。若变了，说明还有别的地方在复制几何。
@@ -272,6 +271,10 @@ elem   +5 mm
 `hairspec` 是贴在头发上的镜面叠加层（98% 透明，与 `hair` 3380 对重合）。
 丢弃它的理由是**导出器把所有材质写成 `blendmode="NONE"`（不透明）** ——
 留着它等于用一层近黑色几何盖住整个头发，**金发变黑发**。
+
+> **区分两件现象相同、根因不同的事**：① 构建阶段**没有**丢弃它 → 实机真的变黑发；
+> ② 构建阶段已丢弃、但**预览脚本自己重读源 PMX** 又把它画出来 → 那是**预览假阳性**
+> （软渲染不做 alpha 混合，画成实心黑），见 `08-diagnostic-discipline.md` §12.2。
 
 （导出器写死 shader/blendmode 这件事见本文 §7.10；导出侧的处理见
 `05-export-and-packaging.md` §9.8。）
@@ -341,19 +344,16 @@ alpha test 也剔不掉它** —— 这就是为什么"把 alpha test 阈值调�
 ```
 char_ter_f_afr_blend_head_01_diffhq   2048²  mipCount=12
 其 -small 变体                         256²  mipCount=9
-
-**级数公式（三个数据点实测一致）**：
-
-```
-mipCount = log2(max(width, height)) + 1        逐级减半直到 1×1
-
-2048² -> 12      256² -> 9      1024² -> 11
 ```
 
-即"一路减半到 1×1"。自己生成时按这个算，别写死数字。
+**级数公式**（三个数据点实测一致）：
+
+```
+mipCount = floor(log2(max(width, height))) + 1        # 一路减半到 1×1
+2048² -> 12        1024² -> 11        256² -> 9
 ```
 
-抽查到的每一张都带链，`mipCount` 分别在 12 与 9 —— 与硬写的 **1** 差一个数量级。
+抽查到的每一张都带链，`mipCount` 分别是 12 与 9 —— 与硬写的 **1** 差一个数量级。
 **读 DDS 时先把这个数打出来**：它是 1（或 0）就说明编码器在写单级贴图。
 
 **没有 mip 的后果**：GPU 只能点采样密集图集，在任何"一个纹素小于一个像素"的距离上
@@ -393,18 +393,12 @@ header |= DDSCAPS_COMPLEX | DDSCAPS_MIPMAP
 Blender 里设的 blendmode **完全没有生效**：该透明的没透明，该双面的被剔除；
 而 XML 里也看不出哪里"设错了"，因为它根本不是自己写的那份值。
 
-### §7.10.2 证据
+### §7.10.2 成因
 
-`X4CharacterConverter/package_export.py:build_material_library()`：
-
-```python
-"shader": "p1_character",
-"blendmode": "NONE",
-```
-
-**无论 Blender 材质上挂了什么 `x4cc_shader` / `x4cc_blendmode`，都写死这两个值。**
-核对艾梅莉埃的成品：18 个材质**全部** `p1_character` + `NONE`，
-尽管代码里设了 `ALPHA1` —— 它的黑丝从未真正透明过。
+`X4CharacterConverter/package_export.py:build_material_library()` 把 `shader` 与
+`blendmode` **写死**成 `p1_character` + `NONE`：Blender 材质上挂的
+`x4cc_shader` / `x4cc_blendmode` 自定义属性一律被忽略。
+（导出器源码证据、后果清单与重写代码见 `05-export-and-packaging.md` §9.8。）
 
 ### §7.10.3 材质侧要准备什么
 
@@ -416,16 +410,10 @@ Blender 里设的 blendmode **完全没有生效**：该透明的没透明，该
 **顺带的坑**：`material_library.xml` 里导出器写的贴图路径是占位符
 `PUT_YOUR_TEXTURE_PATH_HERE`，同一个重写步骤里一并修掉。
 
-### §7.10.4 本例最终材质表
+> **最终材质表**（薄片 → `TWOSIDED`、封闭实体 → `NONE`、实测 alpha 面 → `ALPHA1`）
+> 见 `05-export-and-packaging.md` §9.8；它可以直接当 manifest 的起点。
 
-```
-薄片（hair/acc*/cloth/ribbon/skirt/petti/eyelash/brow/eyelid/face2/eyespec/mouth）
-        p1_character（hair 用 p1_hair）+ TWOSIDED
-封闭实体（face/eyewhite/iris/teeth）    p1_character + NONE
-实测 alpha 面（skin/elem）              p1_character + ALPHA1
-```
-
-### §7.10.5 怎么证伪
+### §7.10.4 怎么证伪
 
 1. 直接打开导出后的 `material_library.xml` 逐条查 blendmode：
    **全是 `NONE` 就说明又是硬编码那两支**。
@@ -433,11 +421,7 @@ Blender 里设的 blendmode **完全没有生效**：该透明的没透明，该
    再怀疑贴图 alpha（若 diffuse 用 BC1 编码，alpha 通道**根本不存在**）。
 3. 别靠"在 Blender 里改材质再导一次"验证这件事 —— 那正是它一直没暴露的原因。
 
-> 导出侧的处理（重写时机、manifest 校验）见 `05-export-and-packaging.md` §9.8。
-
----
-
-## §7.11 `blendmode` 是单值：**删掉作者的"隐藏面"**，别指望 alpha 帮你省事
+## §7.11 `blendmode` 是单值：必须删掉作者的"隐藏面"
 
 ### §7.11.1 症状
 
@@ -516,9 +500,11 @@ if float(a.min()) < 254.0:                # 全不透明的图直接跳过，省
 
 删完后：
 
-* 材质**统一用 `TWOSIDED`**（薄片）或 `NONE`（封闭实体），不再需要 alpha 模式；
+* 材质**统一用 `TWOSIDED`**（薄片）或 `NONE`（封闭实体）——
+  只有 §7.11.4 判为"羽化边、要留"的少数面才需要 alpha 模式；
 * 贴图可以从 BC3 **降到 BC1**（省 25% 显存）；
-* 顶点数顺带下降（甘雨 `cloth` 7440 → 6851，`skin` 766 → 690）。
+* 顶点数顺带下降（甘雨 `cloth` 7440 → 6851、`skin` 766 → 690，**单位是顶点**；
+  §7.11.3 的 906 / 86 是**面数**，两套量纲不要混）。
 
 > ⚠️ **`atlas_alpha()` 的 v 方向要数清**：Blender 的 `image.pixels` **row 0 在图像底部**，
 > 而 PMX 的 v = 0 在顶部 —— 读进来要 `px[::-1]` 翻一次，才能和 PIL 版采样函数共用。
