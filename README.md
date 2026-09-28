@@ -21,9 +21,10 @@ macro 只挑 head / torso / props 三个网格槽位，所以替换物必须带�
 - `SKILL.md` 给出**八条硬规则**（骨架逐字节、坐标手性与绕序、两段都要平滑着色、
   目标种族决定替换策略、UV 的 v 轴、背面用 TWOSIDED、横向阻尼不能逐级递减、
   `blendmode` 单值 → 删掉作者的隐藏面），外加数字速查、动手顺序与症状索引；
-- `references/` 下 10 个文档承载细节：逐骨绑定姿态转移、骨轴推导、
+- `references/` 下 11 个文档承载细节：逐骨绑定姿态转移、骨轴推导、
   眼球 / 脚 / 手指 / 头颈的逐项处理、顶点预算与法线、材质与贴图、导出打包与 XML、
-  发版校验清单、实机症状决策树、诊断纪律、腿与步态。
+  发版校验清单、实机症状决策树、诊断纪律、腿与步态，
+  以及**改完资产后用离线预览器（`x4-anim-preview/tools/ai_check.py`）在进游戏前自查**。
 
 **动手前先读 `SKILL.md` §0**，它说明每一步该读哪个文档。
 
@@ -44,6 +45,8 @@ references/
   07-symptom-triage.md          实机症状 → 判据 → 修法（22 条）
   08-diagnostic-discipline.md   诊断纪律：尺子先被证伪、判据方向写反的案例
   09-legs-and-lateral-damping.md 腿与步态：猫步的可测判据、横向阻尼不能逐级递减
+  10-anim-preview-selfcheck.md  改完资产先离线自查：x4-anim-preview 预览器的用法、
+                                  report.json 判据、看图纪律（工具在独立工程里）
 ```
 
 ## 安装
@@ -81,6 +84,11 @@ Windows 上是 `C:\Users\<你>\.dsh\skills\x4-npc-replacement-mod\`。
 | [`x4-ganyu-mod`](https://github.com/tridkx/x4-ganyu-mod) | 原神 甘雨 → Argon 女性 | **`blendmode` 是单值 → 删掉作者的隐藏面**、材质名不可跨模型复用 |
 
 那边有可运行的代码；这边是可以复用的**方法与坑位**。
+
+另外还有一个**配套工具仓库**：[`x4-anim-preview`](https://github.com/tridkx/x4-anim-preview)
+—— `SKILL.md` §0.4 与 `references/10-anim-preview-selfcheck.md` §14 用的离线预览器就在那里
+（直接读游戏 `.xsm` 动画来驱动 mod `.xac`，不进游戏就能看出动作问题）。
+它**不在本仓库里**；本地那份丢了 / 换了机器，clone 下来按 §14.0 重建即可。
 
 ## Licence
 

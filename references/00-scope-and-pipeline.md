@@ -183,6 +183,7 @@ LookAt_Target
 | **RE-Mesh-Editor** | 读 RE Engine `.mesh`（位置 + 权重 + UV） | 换来源游戏时换成对应解析器 |
 | Blender 4.2+ | 网格处理、减面、渲染验证 | 本例 5.2 LTS |
 | Python 3.13 + numpy + Pillow | 数值处理、贴图 | Blender 自带 Python 没有 Pillow |
+| **`x4-anim-preview`**（可选，强烈建议） | 读游戏 `.xsm` 动画来驱动 mod `.xac`，**不进游戏就能看动作问题** | 独立仓库 <https://github.com/tridkx/x4-anim-preview>；用法 / 判据 / 重建见 `10-anim-preview-selfcheck.md` §14 |
 
 ### 端到端流程
 
@@ -194,12 +195,16 @@ LookAt_Target
 5. 建 .blend（stage1），逐子网格建网格 + 顶点组 + UV + 平滑着色
 6. 材质与贴图：拆通道 → BC 编码 → DDS（见 §7）
 7. stage2：导入宿主 .xac → 填充 mesh 槽位 → 导出新 .xac（见 §9）
-8. 组装 mod 树 + 三个 XML → XRCatTool 打包
-9. ★ 发版前跑校验清单（见 §10）
+8. ★ 每改完一版 head / torso 的 .xac：跑一次离线预览器自查（见 §14）——
+   比值向 1 收敛再进游戏
+9. 组装 mod 树 + 三个 XML → XRCatTool 打包
+10. ★ 发版前跑校验清单（见 §10）
 ```
 
 **第 3 步是整个工程的核心**，也是失败率最高的地方。
-**第 9 步不能省**：X4 的失败模式（透明、面片、频闪）在离线渲染里各有对应判据。
+**第 8 步是"进游戏之前"的那道闸**：动作类问题（撕裂 / 猫步 / 悬空 / 骨架 / 绕序）
+在预览器里一次就能圈出来，不必靠反复进游戏撞。
+**第 10 步不能省**：X4 的失败模式（透明、面片、频闪）在离线渲染里各有对应判据。
 
 ### 建议的工程布局
 
